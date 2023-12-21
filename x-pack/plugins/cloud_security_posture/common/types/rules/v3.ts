@@ -132,9 +132,6 @@ export interface FindCspBenchmarkRuleResponse {
 
 export const cspBenchmarkRules = schema.arrayOf(
   schema.object({
-    benchmark_id: schema.string(),
-    benchmark_version: schema.string(),
-    rule_number: schema.string(),
     rule_id: schema.string(),
   })
 );
@@ -170,5 +167,5 @@ export type CspSettings = TypeOf<typeof cspSettingsSchema>;
 
 export interface BulkActionBenchmarkRulesResponse {
   newCspSettings: SavedObjectsUpdateResponse<CspSettings>;
-  disabledRules: number;
+  disabledRulesCounter: number;
 }
