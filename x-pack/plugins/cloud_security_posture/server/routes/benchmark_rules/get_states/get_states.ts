@@ -9,9 +9,9 @@ import { transformError } from '@kbn/securitysolution-es-utils';
 import { CspRouter } from '../../../types';
 import { CSP_GET_BENCHMARK_RULES_STATE_ROUTE_PATH } from '../../../../common/constants';
 import { CspBenchmarkRulesStates } from '../../../../common/types/rules/v3';
-import { getMutedCspBenchmarkRulesHandler } from './v1';
+import { getCspBenchmarkRulesStatesHandler } from './v1';
 
-export const defineGetMutedCspBenchmarkRulesRoute = (router: CspRouter) =>
+export const defineGetCspBenchmarkRulesStatesRoute = (router: CspRouter) =>
   router.versioned
     .get({
       access: 'internal',
@@ -31,14 +31,12 @@ export const defineGetMutedCspBenchmarkRulesRoute = (router: CspRouter) =>
         try {
           const encryptedSoClient = cspContext.encryptedSavedObjects;
 
-          const mutedRules: CspBenchmarkRulesStates = await getMutedCspBenchmarkRulesHandler(
+          const rulesStates: CspBenchmarkRulesStates = await getCspBenchmarkRulesStatesHandler(
             encryptedSoClient
           );
 
           return response.ok({
-            body: {
-              muted_rules: mutedRules,
-            },
+            body: rulesStates,
           });
         } catch (err) {
           const error = transformError(err);

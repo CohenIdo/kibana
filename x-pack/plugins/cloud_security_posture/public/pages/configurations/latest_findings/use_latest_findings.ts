@@ -22,6 +22,8 @@ import {
 } from '../../../../common/constants';
 import { MAX_FINDINGS_TO_LOAD } from '../../../common/constants';
 import { showErrorToast } from '../../../common/utils/show_error_toast';
+import { useGetCspBenchmarkRulesStatesApi } from '../../../common/api/use_get_benchmark_rules_state_api';
+import { CspBenchmarkRulesStates } from '@kbn/cloud-security-posture-plugin/common/types/latest';
 
 interface UseFindingsOptions extends FindingsBaseEsQuery {
   sort: string[][];
@@ -42,15 +44,62 @@ interface FindingsAggs {
   count: estypes.AggregationsMultiBucketAggregateBase<estypes.AggregationsStringRareTermsBucketKeys>;
 }
 
-export const getFindingsQuery = ({ query, sort }: UseFindingsOptions, pageParam: any) => ({
+const buildMutedRulesFilter = (rulesStates: any) => {
+  // const getRulesStatesResponse = await useGetCspBenchmarkRulesStatesApi();
+
+  console.log('**************************');
+  console.log({ rulesStates });
+  console.log('**************************');
+  // const rulesStates = getRulesStatesResponse.data as CspBenchmarkRulesStates;
+
+  // console.log({ rulesStates });
+  const mustNotFilter = [];
+  const mutedRules = Object.fromEntries(
+    Object.entries(rulesStates).filter(([key, value]) => value.muted === true)
+  );
+  for (const key in mutedRules) {
+    if (mutedRules.hasOwnProperty(key)) {
+      const rule = mutedRules[key];
+      const mustNotClause = {
+        bool: {
+          must: [
+            { term: { 'rule.benchmark.id': rule.benchmark_id } },
+            { term: { 'rule.benchmark.version': rule.benchmark_version } },
+            { term: { 'rule.benchmark.rule_number ': rule.rule_number } },
+          ],
+        },
+      };
+
+      mustNotFilter.push(mustNotClause);
+    }
+  }
+
+  console.log({ mustNotFilter });
+
+  return mustNotFilter;
+};
+export const getFindingsQuery = async (
+  { query, sort }: UseFindingsOptions,
+  rulesStates: any,
+  pageParam: any
+) => ({
   index: CSP_LATEST_FINDINGS_DATA_VIEW,
   sort: getMultiFieldsSort(sort),
   size: MAX_FINDINGS_TO_LOAD,
   aggs: getFindingsCountAggQuery(),
   ignore_unavailable: false,
   query: {
-    ...query,
     bool: {
+      must_not: [
+        {
+          term: {
+            'rule.benchmark.id': {
+              value: 'cis_gcp',
+            },
+          },
+        },
+        // Add more must_not conditions if needed
+      ],
       ...query?.bool,
       filter: [
         ...(query?.bool?.filter ?? []),
@@ -67,6 +116,46 @@ export const getFindingsQuery = ({ query, sort }: UseFindingsOptions, pageParam:
   },
   ...(pageParam ? { search_after: pageParam } : {}),
 });
+
+// export const getFindingsQuery = async (
+//   { query, sort }: UseFindingsOptions,
+//   rulesStates: any,
+//   pageParam: any
+// ) => ({
+//   index: CSP_LATEST_FINDINGS_DATA_VIEW,
+//   sort: getMultiFieldsSort(sort),
+//   size: MAX_FINDINGS_TO_LOAD,
+//   aggs: getFindingsCountAggQuery(),
+//   ignore_unavailable: false,
+//   query: {
+//     ...query,
+//     bool: {
+//       // must_not: buildMutedRulesFilter(rulesStates),
+//       must_not: [
+//         {
+//           term: {
+//             'rule.benchmark.id': {
+//               value: 'cis_gcp',
+//             },
+//           },
+//         },
+//       ],
+//       ...query?.bool,
+//       filter: [
+//         ...(query?.bool?.filter ?? []),
+//         {
+//           range: {
+//             '@timestamp': {
+//               gte: `now-${LATEST_FINDINGS_RETENTION_POLICY}`,
+//               lte: 'now',
+//             },
+//           },
+//         },
+//       ],
+//     },
+//   },
+//   ...(pageParam ? { search_after: pageParam } : {}),
+// });
 
 const getMultiFieldsSort = (sort: string[][]) => {
   return sort.map(([id, direction]) => {
@@ -111,20 +200,26 @@ export const useLatestFindings = (options: UseFindingsOptions) => {
     data,
     notifications: { toasts },
   } = useKibana().services;
+
+  const { data: rulesStates, status, isSuccess } = useGetCspBenchmarkRulesStatesApi();
+
   return useInfiniteQuery(
     ['csp_findings', { params: options }],
     async ({ pageParam }) => {
+      // const getRulesStatesResponse = await useGetCspBenchmarkRulesStatesApi();
+
+      // console.log({ getRulesStatesResponse });
       const {
         rawResponse: { hits, aggregations },
       } = await lastValueFrom(
         data.search.search<LatestFindingsRequest, LatestFindingsResponse>({
-          params: getFindingsQuery(options, pageParam),
+          params: await getFindingsQuery(options, rulesStates, pageParam),
         })
       );
       if (!aggregations) throw new Error('expected aggregations to be an defined');
       if (!Array.isArray(aggregations.count.buckets))
         throw new Error('expected buckets to be an array');
-
+      console.log('ORCHO', number.is(hits.total) ? hits.total : 0);
       return {
         page: hits.hits.map((hit) => buildDataTableRecord(hit as EsHitRecord)),
         total: number.is(hits.total) ? hits.total : 0,
@@ -132,7 +227,8 @@ export const useLatestFindings = (options: UseFindingsOptions) => {
       };
     },
     {
-      enabled: options.enabled,
+      // TODO: handle when rules states is empty and errors
+      enabled: options.enabled && !!rulesStates,
       keepPreviousData: true,
       onError: (err: Error) => showErrorToast(toasts, err),
       getNextPageParam: (lastPage) => {

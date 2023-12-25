@@ -11,7 +11,7 @@ import {
   INTERNAL_CSP_SETTINGS_SAVED_OBJECT_TYPE,
 } from '../../../../common/constants';
 
-export const getMutedCspBenchmarkRulesHandler = async (
+export const getCspBenchmarkRulesStatesHandler = async (
   encryptedSoClient: SavedObjectsClientContract
 ): Promise<CspBenchmarkRulesStates> => {
   const getSoResponse = await encryptedSoClient.get<CspSettings>(
@@ -19,9 +19,11 @@ export const getMutedCspBenchmarkRulesHandler = async (
     INTERNAL_CSP_SETTINGS_SAVED_OBJECT_ID
   );
 
-  const mutedRules = Object.fromEntries(
-    Object.entries(getSoResponse.attributes.rules).filter(([key, value]) => value.muted === true)
-  );
+  if (!getSoResponse.attributes.rules) return {};
 
-  return mutedRules;
+  // const mutedRules = Object.fromEntries(
+  //   Object.entries(getSoResponse.attributes.rules).filter(([key, value]) => value.muted === true)
+  // );
+
+  return getSoResponse.attributes.rules;
 };
